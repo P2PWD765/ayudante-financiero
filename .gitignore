@@ -1,0 +1,48 @@
+# Entorno virtual (nunca subir)
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Cachés / herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.cache/
+.ipynb_checkpoints/
+
+# Streamlit / secretos
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+
+# Exportaciones generadas (datos del usuario)
+exports/
+*.xlsx
+*.xls
+!requirements.txt
+
+# IDE / SO
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
