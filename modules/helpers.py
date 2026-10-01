@@ -129,7 +129,8 @@ INDICATOR_HELP: dict[str, str] = {
     ),
     "activos": "Cantidad de tickers incluidos en el análisis actual.",
     "periodo": "Ventana histórica de precios descargados de Yahoo Finance.",
-    "benchmark": "Índice de referencia para Beta y Alpha (por defecto S&P 500).",
+    "benchmark": "Índice de referencia para Beta y Alpha. En grupos, también identifica el mercado (ej. ^N225 → Japón).",
+    "grupo": "Conjunto de tickers con su propio benchmark. Dashboard/Optimización/Riesgo muestran el grupo activo.",
     "riesgo_anual": (
         "Riesgo / volatilidad anual (σ): desviación estándar de los retornos "
         "mensuales, anualizada × √12. Mide cuánto puede variar el portafolio."
@@ -163,7 +164,15 @@ INDICATOR_HELP: dict[str, str] = {
     ),
     "var": (
         "VaR paramétrico 95%: pérdida estimada en un mes malo "
-        "(aproximación normal con media y σ)."
+        "(aproximación normal con media y σ). Valor positivo = pérdida."
+    ),
+    "var_historico": (
+        "VaR histórico 95%: pérdida del percentil empírico "
+        "(peor 5% de los meses observados). No asume normalidad."
+    ),
+    "cvar": (
+        "CVaR 95% (Expected Shortfall): pérdida media en los meses "
+        "iguales o peores que el VaR histórico. Mide la severidad de la cola."
     ),
     "peso": "Porcentaje del capital asignado a ese activo (los pesos suman 100%).",
     "correlacion": (
@@ -175,6 +184,14 @@ INDICATOR_HELP: dict[str, str] = {
         "Base para riesgo del portafolio."
     ),
     "capital": "Monto de dinero del portafolio usado en VaR y valuación de pesos.",
+    "montecarlo": (
+        "Simulación Monte Carlo: genera miles de trayectorias de valor del "
+        "portafolio con retornos mensuales correlacionados N(μ, Σ) y pesos fijos."
+    ),
+    "black_litterman": (
+        "Black-Litterman combina el equilibrio de mercado (π) con tus views "
+        "(absolutas o relativas) para obtener retornos posteriores y pesos óptimos."
+    ),
 }
 
 
@@ -269,7 +286,7 @@ def safe_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
 
 
 def apply_theme() -> None:
-    """Inyecta CSS de la paleta Azul Dashboard en la página Streamlit.
+    """Inyecta CSS del tema Japanese Minimalism (PGA).
 
     Debe llamarse en app.py y en cada página de pages/, justo después
     de st.set_page_config / al inicio del script.
@@ -282,33 +299,86 @@ def apply_theme() -> None:
     st.markdown(
         f"""
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@300;400;500;700&family=Shippori+Mincho:wght@400;500;600&display=swap');
+
         :root {{
             --af-bg: {c["background"]};
             --af-card: {c["card"]};
+            --af-surface: {c.get("surface", c["primary_soft"])};
             --af-text: {c["text"]};
             --af-muted: {c["text_muted"]};
             --af-primary: {c["primary"]};
             --af-soft: {c["primary_soft"]};
             --af-secondary: {c["secondary"]};
+            --af-secondary-soft: {c.get("secondary_soft", c["primary_soft"])};
             --af-danger: {c["danger"]};
             --af-on-primary: {c["on_primary"]};
+            --af-hairline: {c.get("hairline", c["primary_soft"])};
         }}
 
         html, body, [data-testid="stAppViewContainer"],
         .stApp, [data-testid="stApp"] {{
             background-color: var(--af-bg) !important;
             color: var(--af-text) !important;
+            font-family: "Zen Kaku Gothic New", "Noto Sans JP", sans-serif !important;
+            letter-spacing: 0.01em;
+        }}
+
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stWidgetLabel"] {{
+            color: var(--af-text) !important;
+            font-family: "Zen Kaku Gothic New", "Noto Sans JP", sans-serif !important;
+        }}
+
+        h1, h2, h3 {{
+            font-family: "Shippori Mincho", "Noto Serif JP", serif !important;
+            font-weight: 500 !important;
+            letter-spacing: 0.04em !important;
+            color: var(--af-text) !important;
         }}
 
         [data-testid="stSidebar"],
         [data-testid="stSidebar"] > div:first-child {{
             background-color: var(--af-card) !important;
-            border-right: 3px solid var(--af-primary) !important;
+            border-right: 1px solid var(--af-hairline) !important;
+        }}
+
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
+            letter-spacing: 0.06em;
+        }}
+
+        /* Sidebar nav: sin subrayado */
+        [data-testid="stSidebarNav"] a,
+        [data-testid="stSidebarNav"] a span,
+        [data-testid="stSidebarNav"] li a,
+        [data-testid="stSidebarNavLink"],
+        [data-testid="stSidebarNav"] [data-testid="stMarkdownContainer"] a {{
+            text-decoration: none !important;
+            border-bottom: none !important;
+            box-shadow: none !important;
+        }}
+        [data-testid="stSidebarNav"] a:hover,
+        [data-testid="stSidebarNav"] a:focus,
+        [data-testid="stSidebarNav"] a:active,
+        [data-testid="stSidebarNav"] a:visited {{
+            text-decoration: none !important;
+            border-bottom: none !important;
+        }}
+
+        /* Item activo del menú: acento índigo sobrio (sin underline) */
+        [data-testid="stSidebarNav"] a[aria-current="page"],
+        [data-testid="stSidebarNav"] span[aria-current="page"],
+        [data-testid="stSidebarNavLink"][aria-current="page"] {{
+            background-color: var(--af-soft) !important;
+            color: var(--af-primary) !important;
+            border-radius: 2px !important;
+            text-decoration: none !important;
+            border-bottom: none !important;
         }}
 
         [data-testid="stHeader"] {{
             background-color: var(--af-card) !important;
-            border-bottom: 3px solid var(--af-primary) !important;
+            border-bottom: 1px solid var(--af-hairline) !important;
         }}
 
         h1, h2, h3, h4, h5, h6, p, label,
@@ -318,26 +388,32 @@ def apply_theme() -> None:
 
         .stCaption, [data-testid="stCaptionContainer"] {{
             color: var(--af-muted) !important;
+            letter-spacing: 0.03em !important;
         }}
 
         [data-testid="stMetric"],
         [data-testid="stExpander"],
         div[data-testid="stVerticalBlockBorderWrapper"] {{
             background-color: var(--af-card) !important;
-            border: 1px solid var(--af-soft) !important;
-            border-radius: 8px !important;
+            border: 1px solid var(--af-hairline) !important;
+            border-radius: 2px !important;
+            box-shadow: none !important;
         }}
 
         [data-testid="stMetric"] {{
-            padding: 0.75rem 1rem !important;
+            padding: 1rem 1.15rem !important;
         }}
 
         [data-testid="stMetricValue"] {{
             color: var(--af-primary) !important;
+            font-weight: 500 !important;
         }}
 
         [data-testid="stMetricLabel"] {{
             color: var(--af-muted) !important;
+            letter-spacing: 0.04em !important;
+            text-transform: uppercase !important;
+            font-size: 0.72rem !important;
         }}
 
         .stButton > button[kind="primary"],
@@ -345,49 +421,184 @@ def apply_theme() -> None:
             background-color: var(--af-primary) !important;
             color: var(--af-on-primary) !important;
             border: 1px solid var(--af-primary) !important;
+            border-radius: 2px !important;
+            letter-spacing: 0.06em !important;
+            font-weight: 500 !important;
+        }}
+
+        .stButton > button[kind="primary"]:hover,
+        button[data-testid="baseButton-primary"]:hover {{
+            background-color: var(--af-secondary) !important;
+            border-color: var(--af-secondary) !important;
         }}
 
         .stButton > button[kind="secondary"],
         button[data-testid="baseButton-secondary"] {{
             background-color: var(--af-card) !important;
             color: var(--af-text) !important;
-            border: 1px solid var(--af-primary) !important;
+            border: 1px solid var(--af-hairline) !important;
+            border-radius: 2px !important;
         }}
 
-        .stTextInput input, .stNumberInput input,
-        .stSelectbox div[data-baseweb="select"] {{
-            background-color: var(--af-card) !important;
-            color: var(--af-text) !important;
+        /*
+         * Contraste obligatorio en cajas de texto / inputs:
+         * fondo blanco (card) + letra índigo (text). Nunca mismo color.
+         */
+        .stTextInput input,
+        .stTextInput textarea,
+        .stNumberInput input,
+        .stTextArea textarea,
+        [data-testid="stTextInput"] input,
+        [data-testid="stNumberInput"] input,
+        [data-testid="stTextArea"] textarea,
+        [data-testid="stDateInput"] input,
+        div[data-baseweb="input"] input,
+        div[data-baseweb="base-input"] input,
+        div[data-baseweb="textarea"] textarea,
+        .stSelectbox div[data-baseweb="select"] > div,
+        .stMultiSelect div[data-baseweb="select"] > div,
+        [data-testid="stSelectbox"] div[data-baseweb="select"],
+        [data-baseweb="select"] span,
+        [data-baseweb="input"] {{
+            background-color: {c["card"]} !important;
+            color: {c["text"]} !important;
+            -webkit-text-fill-color: {c["text"]} !important;
+            caret-color: {c["text"]} !important;
+            border-radius: 2px !important;
         }}
 
-        /* Tablas Streamlit */
+        .stTextInput input::placeholder,
+        .stTextArea textarea::placeholder,
+        [data-testid="stTextInput"] input::placeholder,
+        [data-testid="stTextArea"] textarea::placeholder,
+        div[data-baseweb="input"] input::placeholder,
+        div[data-baseweb="textarea"] textarea::placeholder {{
+            color: {c["text_muted"]} !important;
+            -webkit-text-fill-color: {c["text_muted"]} !important;
+            opacity: 0.85 !important;
+        }}
+
+        /* Autofill del navegador: evita texto blanco sobre blanco */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        textarea:-webkit-autofill {{
+            -webkit-box-shadow: 0 0 0px 1000px {c["card"]} inset !important;
+            -webkit-text-fill-color: {c["text"]} !important;
+            caret-color: {c["text"]} !important;
+        }}
+
+        /* Data editor / celdas editables */
+        [data-testid="stDataFrame"] input,
+        [data-testid="stDataEditor"] input,
+        [data-testid="stDataEditor"] textarea {{
+            background-color: {c["card"]} !important;
+            color: {c["text"]} !important;
+            -webkit-text-fill-color: {c["text"]} !important;
+        }}
+
         [data-testid="stDataFrame"],
         [data-testid="stTable"] {{
-            border: 1px solid var(--af-soft) !important;
-            border-radius: 8px !important;
+            border: 1px solid var(--af-hairline) !important;
+            border-radius: 2px !important;
         }}
 
         [data-testid="stAlert"] {{
-            border-left: 4px solid var(--af-primary) !important;
+            border-left: 2px solid var(--af-secondary) !important;
+            border-radius: 2px !important;
             color: var(--af-text) !important;
+            background-color: var(--af-card) !important;
         }}
 
-        /* Tabs */
         button[data-baseweb="tab"] {{
             color: var(--af-muted) !important;
+            letter-spacing: 0.05em !important;
+            text-decoration: none !important;
         }}
         button[data-baseweb="tab"][aria-selected="true"] {{
             color: var(--af-primary) !important;
-            border-bottom-color: var(--af-primary) !important;
+            border-bottom-color: var(--af-secondary) !important;
+            text-decoration: none !important;
+        }}
+
+        /* Branding PGA en sidebar */
+        .pga-sidebar-brand {{
+            padding: 0.75rem 0.5rem 1.25rem 0.5rem;
+            border-bottom: 1px solid var(--af-hairline);
+            margin-bottom: 0.75rem;
+            text-align: center;
+        }}
+        .pga-sidebar-brand .pga-mark {{
+            font-family: "Shippori Mincho", serif;
+            font-size: 1.35rem;
+            letter-spacing: 0.28em;
+            color: var(--af-primary);
+            margin: 0;
+        }}
+        .pga-sidebar-brand .pga-tag {{
+            font-size: 0.65rem;
+            letter-spacing: 0.22em;
+            color: var(--af-secondary);
+            text-transform: lowercase;
+            margin: 0.35rem 0 0 0;
+        }}
+
+        .pga-hero {{
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 1.5rem 0 2rem 0;
+            border-bottom: 1px solid var(--af-hairline);
+            margin-bottom: 1.75rem;
+        }}
+        .pga-hero h1 {{
+            font-family: "Shippori Mincho", serif !important;
+            font-size: 2.4rem !important;
+            letter-spacing: 0.2em !important;
+            margin: 0 !important;
+            color: var(--af-primary) !important;
+        }}
+        .pga-hero .pga-line {{
+            width: 4.5rem;
+            height: 1px;
+            background: var(--af-secondary);
+            border: none;
+            margin: 0.15rem 0;
+        }}
+        .pga-hero .pga-sub {{
+            color: var(--af-muted) !important;
+            letter-spacing: 0.18em;
+            font-size: 0.8rem;
+            text-transform: lowercase;
+            margin: 0;
         }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
+    # Marca en sidebar (todas las páginas)
+    from pathlib import Path
+
+    logo_path = Path(__file__).resolve().parent.parent / "assets" / "pga_logo.png"
+    if logo_path.exists():
+        st.sidebar.image(str(logo_path), use_container_width=True)
+        st.sidebar.caption(config.APP_TAGLINE)
+    else:
+        st.sidebar.markdown(
+            f"""
+            <div class="pga-sidebar-brand">
+                <p class="pga-mark">{config.APP_BRAND}</p>
+                <p class="pga-tag">{config.APP_TAGLINE}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 
 def theme_styler(styler: Any, format_dict: dict | str | None = None, na_rep: str = "N/A") -> Any:
-    """Aplica formato y colores de tabla (headers azul, texto oscuro legible).
+    """Aplica formato y colores de tabla (headers índigo, estilo minimal).
 
     Args:
         styler: pd.DataFrame o Styler de pandas.
@@ -400,6 +611,7 @@ def theme_styler(styler: Any, format_dict: dict | str | None = None, na_rep: str
     import config
 
     c = config.COLORS
+    hover = c.get("secondary_soft", c["primary_soft"])
 
     if hasattr(styler, "style"):
         # Es un DataFrame
@@ -417,7 +629,7 @@ def theme_styler(styler: Any, format_dict: dict | str | None = None, na_rep: str
             **{
                 "color": c["text"],
                 "background-color": c["card"],
-                "border-color": c["primary_soft"],
+                "border-color": c.get("hairline", c["primary_soft"]),
             }
         )
         .set_table_styles(
@@ -427,7 +639,8 @@ def theme_styler(styler: Any, format_dict: dict | str | None = None, na_rep: str
                     "props": [
                         ("background-color", c["primary"]),
                         ("color", c["on_primary"]),
-                        ("font-weight", "600"),
+                        ("font-weight", "500"),
+                        ("letter-spacing", "0.04em"),
                         ("text-align", "center"),
                         ("border", f"1px solid {c['primary']}"),
                     ],
@@ -438,7 +651,7 @@ def theme_styler(styler: Any, format_dict: dict | str | None = None, na_rep: str
                         ("color", c["text"]),
                         ("background-color", c["card"]),
                         ("text-align", "right"),
-                        ("border", f"1px solid {c['primary_soft']}"),
+                        ("border", f"1px solid {c.get('hairline', c['primary_soft'])}"),
                     ],
                 },
                 {
@@ -451,7 +664,7 @@ def theme_styler(styler: Any, format_dict: dict | str | None = None, na_rep: str
                 {
                     "selector": "tr:hover td",
                     "props": [
-                        ("background-color", "#BFDBFE"),
+                        ("background-color", hover),
                         ("color", c["text"]),
                     ],
                 },

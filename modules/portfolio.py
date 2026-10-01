@@ -206,6 +206,21 @@ def evaluate_portfolio(name: str, weights: pd.Series, **kwargs) -> dict:
             risk_free_rate=rf,
         )
 
+    # VaR / CVaR en unidades de retorno (capital=1). Si hay capital,
+    # también se guarda la pérdida monetaria = retorno × capital.
+    var_parametric = metrics.value_at_risk_from_moments(ret_m, vol_m, confidence=0.95)
+    var_historical = float("nan")
+    cvar_value = float("nan")
+    if portfolio_rets is not None and not getattr(portfolio_rets, "empty", True):
+        risk = metrics.risk_metrics_bundle(
+            portfolio_rets,
+            confidence=0.95,
+            capital=1.0,
+        )
+        var_parametric = risk["var_parametric"]
+        var_historical = risk["var_historical"]
+        cvar_value = risk["cvar"]
+
     result = {
         "name": name,
         "tickers": list(w.index),
@@ -224,6 +239,9 @@ def evaluate_portfolio(name: str, weights: pd.Series, **kwargs) -> dict:
         "sharpe": sharpe,
         "treynor": treynor_value,
         "jensen": jensen_value,
+        "var_parametric_95": var_parametric,
+        "var_historical_95": var_historical,
+        "cvar_95": cvar_value,
         "expected_return": ret_a,
         "variance": var_a,
         "volatility": vol_a,
@@ -235,6 +253,13 @@ def evaluate_portfolio(name: str, weights: pd.Series, **kwargs) -> dict:
     if capital is not None:
         result["value_by_ticker"] = portfolio_value(capital, w)
         result["capital"] = capital
+        result["var_parametric_95_money"] = float(var_parametric * capital)
+        result["var_historical_95_money"] = (
+            float(var_historical * capital) if var_historical == var_historical else float("nan")
+        )
+        result["cvar_95_money"] = (
+            float(cvar_value * capital) if cvar_value == cvar_value else float("nan")
+        )
     return result
 
 
@@ -375,6 +400,9 @@ def portfolios_summary_table(portfolios: dict[str, dict]) -> pd.DataFrame:
             "Sharpe (anual)": portfolio.get("sharpe"),
             "Treynor": portfolio.get("treynor"),
             "Jensen": portfolio.get("jensen"),
+            "VaR 95% paramétrico (mensual)": portfolio.get("var_parametric_95"),
+            "VaR 95% histórico (mensual)": portfolio.get("var_historical_95"),
+            "CVaR 95% (mensual)": portfolio.get("cvar_95"),
         }
         for ticker, weight in portfolio["weights"].items():
             row[f"Peso {ticker}"] = float(weight)

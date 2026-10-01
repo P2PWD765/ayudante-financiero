@@ -4,7 +4,7 @@
 **Ubicación local:** `C:\Users\pgare\OneDrive\Desktop\DESARROLLO PYTHON\AYUDANTE FINANCIERO`  
 **Repositorio GitHub:** https://github.com/P2PWD765/ayudante-financiero  
 **Fecha de este documento:** 28 jul 2026  
-**Estado:** MVP funcional (fases 0–6) + UI/tema azul + indicadores legibles + repo en GitHub
+**Estado:** MVP (fases 0–7c) + **extensiones A–E** (VaR/CVaR, Monte Carlo, TradingView, Black-Litterman, grupos multi-benchmark). Cambios A–E aún **locales** (no subidos a GitHub al cerrar esta actualización).
 
 ---
 
@@ -12,18 +12,20 @@
 
 Desarrollar una aplicación profesional en **Python + Streamlit** para:
 
-- Analizar acciones con datos históricos de internet (Yahoo Finance).
-- Construir y evaluar portafolios.
-- Optimizar (Markowitz): equiponderado, máximo Sharpe, mínima varianza.
-- Mostrar frontera eficiente y Capital Allocation Line (CAL).
+- Analizar acciones con datos históricos (Yahoo Finance).
+- Construir y evaluar portafolios (varios **grupos** de tickers, cada uno con su benchmark).
+- Optimizar Markowitz: equiponderado, máximo Sharpe, mínima varianza; frontera + CAL.
+- **Black-Litterman** con views del usuario.
+- Medir riesgo: VaR paramétrico / histórico / CVaR + **Monte Carlo** (3 escenarios).
+- Ver gráficos **TradingView** por activo.
+- Clasificar activos (sector / industria) con **FinanceDatabase** + mercado vía benchmark.
 - Exportar resultados a Excel/CSV.
 
 Prioridades de diseño:
 
-- Arquitectura modular (fácil de mantener y ampliar).
-- Separar UI (`pages/`) de lógica (`modules/`).
+- Arquitectura modular (UI en `pages/`, lógica en `modules/`).
 - Código documentado, funciones pequeñas, sin duplicar lógica.
-- UI legible: paleta coherente, texto con buen contraste, cada número con contexto.
+- UI legible: paleta azul, texto con buen contraste, cada número con contexto.
 
 ---
 
@@ -35,13 +37,15 @@ Prioridades de diseño:
 | Streamlit | Dashboard / UI |
 | pandas, NumPy, SciPy | Datos y métricas |
 | yfinance | Precios y fundamentales |
-| CVXPY | Optimización Markowitz |
+| financedatabase | Metadatos (sector, industria, país) |
+| CVXPY | Optimización Markowitz / BL |
 | Plotly | Gráficos |
 | OpenPyXL | Exportación Excel |
-| Git + GitHub | Control de versiones y colaboración |
+| TradingView widget | Gráfico interactivo embebido (sin API key) |
+| Git + GitHub | Control de versiones |
 | VS Code / Cursor | Entorno de desarrollo |
 
-Entorno virtual: `.venv` en la raíz del proyecto (no se sube a Git).
+Entorno virtual: `.venv` en la raíz (no se sube a Git).
 
 ---
 
@@ -50,194 +54,155 @@ Entorno virtual: `.venv` en la raíz del proyecto (no se sube a Git).
 ```text
 AYUDANTE FINANCIERO/
 ├── app.py                 # Entrada Streamlit (home) + apply_theme()
-├── config.py              # Configuración central + paleta de colores
+├── config.py              # Config central, paleta, MC, BL, grupos, TradingView
 ├── requirements.txt
 ├── README.md
 ├── CONTEXTO_PROYECTO.md   # Este documento
-├── .gitignore             # Excluye .venv, exports, cachés, secretos
-├── .streamlit/
-│   └── config.toml        # Tema Streamlit (colores base)
+├── .gitignore
+├── .streamlit/config.toml
 ├── reload.py              # Limpia caché y reinicia Streamlit
-├── pages/                 # Solo interfaz
+├── pages/                 # Solo interfaz (orden del menú lateral)
 │   ├── 1_Dashboard.py
-│   ├── 2_Portafolio.py
-│   ├── 3_Optimizacion.py
-│   └── 4_Configuracion.py
+│   ├── 2_Optimización.py  # Markowitz + Black-Litterman
+│   ├── 3_Portafolio.py    # Grupos de tickers + clasificación + analizar
+│   ├── 4_Riesgo.py        # VaR/CVaR + Monte Carlo
+│   └── 5_Configuracion.py
 └── modules/               # Solo lógica
-    ├── helpers.py         # Formatos, tema CSS, tablas, show_metric, glosario
+    ├── helpers.py
     ├── data.py
-    ├── metrics.py
+    ├── metrics.py         # Incluye VaR histórico y CVaR
     ├── portfolio.py
     ├── optimization.py
-    ├── charts.py          # Plotly + paleta unificada
+    ├── black_litterman.py
+    ├── montecarlo.py
+    ├── classification.py  # Mercado vía benchmark + FinanceDatabase
+    ├── tradingview.py     # Embed Advanced Chart
+    ├── charts.py
     ├── export.py
-    └── state.py           # session_state + pipeline de análisis
+    └── state.py           # Grupos + pipeline + grupo activo
 ```
-
-**Nota:** Existió una carpeta vacía `Portafolio_Dashboard/`; el código vive en la raíz `AYUDANTE FINANCIERO`.
 
 ---
 
 ## 4. Flujo de la aplicación
 
 ```text
-Usuario elige tickers
-  → descarga precios diarios (yfinance)
-  → convierte a retornos mensuales log
-  → métricas mensual + anual
-  → 3 portafolios siempre
-  → optimización / frontera / CAL
-  → gráficos en Streamlit (paleta azul)
+Usuario define 1–3 grupos (tickers + benchmark cada uno)
+  → por grupo: descarga precios (yfinance) + benchmark
+  → retornos mensuales log → métricas + 3 portafolios
+  → Markowitz (frontera / CAL) + clasificación sector/industria
+  → (opcional) VaR/CVaR, Monte Carlo, Black-Litterman, TradingView
+  → selector de grupo activo en Dashboard / Optimización / Riesgo
   → export Excel/CSV
 ```
 
 ### Cómo usar (usuario)
 
-1. **Configuración** — Rf, benchmark, periodo, capital; exportar.
-2. **Portafolio** — tickers → **Analizar portafolios**.
-3. **Dashboard** — métricas, fundamentales, matrices, gráficos.
-4. **Optimización** — frontera eficiente + CAL (riesgo y retorno en métricas separadas).
+1. **Configuración** — Rf, periodo, capital; benchmark por defecto para nuevas filas; exportar.
+2. **Portafolio** — una o más filas de tickers (cada una con su benchmark) → **Analizar portafolios**.
+3. **Dashboard** — métricas, VaR, fundamentales, TradingView, matrices, gráficos.
+4. **Optimización** — pestaña Markowitz (frontera + CAL) y pestaña Black-Litterman.
+5. **Riesgo** — VaR/CVaR + Monte Carlo (Pesimista / Normal / Optimista).
 
 ---
 
 ## 5. Decisiones de producto acordadas
 
-### 5.1 Tres portafolios siempre
+### 5.1 Tres portafolios siempre (por grupo)
 
-Con cualquier set de tickers el programa genera:
+1. **Equiponderado** (`1/n`)  
+2. **Máximo Sharpe**  
+3. **Mínima varianza**  
 
-1. **Equiponderado** (`1/n`)
-2. **Máximo Sharpe**
-3. **Mínima varianza**
-
-Long-only (pesos ≥ 0) en v1.
+Long-only (pesos ≥ 0).
 
 ### 5.2 Indicadores por portafolio
 
-- Rendimiento (mensual y anual)
-- Varianza (mensual y anual)
-- Desviación estándar / riesgo (mensual y anual)
-- Beta
-- Sharpe
-- Treynor
-- Jensen (Alpha)
+Rendimiento, varianza, σ, Beta, Sharpe, Treynor, Jensen (mensual/anual); matrices cov/corr; VaR paramétrico, VaR histórico, CVaR (95%).
 
-Además:
+### 5.3 Fundamentales (sin ROIC en v1)
 
-- Matriz de **covarianzas** (mensual)
-- Matriz de **correlaciones** + **heatmap**
-
-### 5.3 Fundamentales (v1, sin ROIC)
-
-Desde Yahoo `info`:
-
-- Market Cap  
-- Enterprise Value  
-- EV/EBITDA  
-- P/S  
-- ROA  
-- ROE  
-
-**ROIC:** fuera de v1 (se puede agregar después).
+Market Cap, Enterprise Value, EV/EBITDA, P/S, ROA, ROE (Yahoo `info`).
 
 ### 5.4 Comparación dual Calculado vs Yahoo
 
-Regla de producto: cuando exista dato Yahoo, mostrar ambos.
-
-Ejemplo: **Beta calculado** | **Beta (Yahoo)**.  
-Si Yahoo no publica el indicador → `N/A`.
-
-Config: `SHOW_YAHOO_COMPARISON`, `YAHOO_REFERENCE_FIELDS` en `config.py`.
+Cuando exista: **Beta calculado** | **Beta (Yahoo)**; si no → `N/A`.
 
 ### 5.5 Tasa libre de riesgo (Rf)
 
-- v1: valor numérico editable (default **4%** en `config.py`).
-- UI en Configuración permite cambiarla.
-- **No** se implementó aún selector de tipo de tasa (T-Bill 3M, 10Y, etc.) → diferido a **v1.1**.
+Editable en Configuración (default **4%**). Selector de tipo de tasa (T-Bill, 10Y…) → diferido.
 
-### 5.6 Benchmark
+### 5.6 Benchmark y grupos (Fase E)
 
-Default: `^GSPC` (S&P 500).
+- Default global / nuevas filas: `^GSPC` (S&P 500).
+- Hasta **3 grupos** (`MAX_ANALYSIS_GROUPS`): cada uno con tickers + benchmark propio.
+- **Regla de producto:** el benchmark del grupo **identifica el mercado**  
+  (ej. `^N225` → Japón, `^GSPC` → Estados Unidos). Mapa en `BENCHMARK_MARKET_MAP`.
+- Sector / industria / industry_group: **FinanceDatabase** (fallback Yahoo).
+- Validador de ticker Yahoo en Portafolio.
 
-### 5.7 Frecuencia de cálculo (decisión clave)
+### 5.7 Frecuencia de cálculo
 
-- Se **descargan precios diarios**.
-- Los **cálculos y la UI** trabajan en **mensual y anual** (no se muestran métricas diarias).
-- Retornos: **logarítmicos**  
-  \(R = \ln(P_t / P_{t-1})\)
-- Anualización desde mensual:  
-  - \(\mu_{anual} = \mu_{mensual} \times 12\)  
-  - \(\sigma_{anual} = \sigma_{mensual} \times \sqrt{12}\)  
-  - \(\Sigma_{anual} = \Sigma_{mensual} \times 12\)
+- Precios **diarios**; UI y cálculos en **mensual y anual**.
+- Retornos **log**: \(R = \ln(P_t / P_{t-1})\).
+- Anualización: \(\mu \times 12\), \(\sigma \times \sqrt{12}\), \(\Sigma \times 12\).
 
-### 5.8 Beta (alineado a Excel del usuario)
+### 5.8 Beta
 
-- Betas individuales ≈ `PENDIENTE` vs S&P (retornos mensuales log).
-- Beta del portafolio = **SUMAPRODUCTO(pesos, betas)**  
-  (equivalente a \(\mathrm{Cov}(R_p, R_m)/\mathrm{Var}(R_m)\)).
+Individual ≈ pendiente vs benchmark del **grupo** (retornos mensuales log).  
+Portafolio = SUMAPRODUCTO(pesos, betas).
 
-### 5.9 Fórmulas de métricas (documento del usuario)
+### 5.9 Fórmulas de riesgo (extensión A)
 
-Implementadas según el prompt de fórmulas:
+- VaR **paramétrico**: \(\mathrm{Capital} \times (Z\cdot\sigma - \mu)\) (positivo = pérdida).
+- VaR **histórico**: \(-\)cuantil \((1-\alpha)\) de retornos.
+- **CVaR**: media de la cola peor o igual al VaR histórico.
+- También en **unidades de retorno** (%) y en **dinero** (× capital).
 
-- Rendimientos log diarios/mensuales (uso operativo: mensual).
-- Acumulado: \(\exp(\sum r_i) - 1\)
-- Varianza / desv. **muestral** (\(n-1\)), no poblacional.
-- VaR **paramétrico**: \(\mathrm{Capital} \times (Z\cdot\sigma - \mu)\)
-- Sharpe: \((R_p - R_f)/\sigma_p\)
-- Alpha Jensen: \(R_p - [R_f + \beta(R_m - R_f)]\)
-- Treynor: \((R_p - R_f)/\beta\)
+### 5.10 Monte Carlo (Fase B)
 
-### 5.10 UI — paleta "Azul Dashboard" (jul 2026)
+- Retornos mensuales multivariados \(N(\mu, \Sigma)\), pesos fijos, \(V_t = V_{t-1}\exp(r_p)\).
+- **3 escenarios** con la misma muestra aleatoria (`MONTE_CARLO_SCENARIOS`):
+  - **Pesimista:** \(\mu - 1\sigma\), vol × 1.25  
+  - **Normal:** histórico  
+  - **Optimista:** \(\mu + 1\sigma\), vol × 0.85  
+- Página **Riesgo**: fan chart, histograma, VaR/CVaR MC.
 
-Decisión: interfaz clara, **azul como color principal**, sin morados ni tonos neón. Texto oscuro legible sobre fondos claros.
+### 5.11 Black-Litterman (Fase D)
+
+- Prior: \(\pi = \delta \Sigma w_{mercado}\) (Market Cap si hay; si no, equiponderado).
+- Views **absolutas** o **relativas** + confianza → \(\mu_{BL}\) → Máx. Sharpe BL.
+- UI: Optimización → pestaña Black-Litterman (`BL_TAU`, `BL_DELTA`).
+
+### 5.12 TradingView (Fase C)
+
+- Widget Advanced Chart embebido (Dashboard y Portafolio).
+- Mapeo Yahoo → TradingView en `TRADINGVIEW_SYMBOL_MAP` (ej. `^GSPC` → `SP:SPX`, `BRK-B` → `NYSE:BRK.B`).
+
+### 5.13 UI — Japanese Minimalism (PGA)
+
+Tema profesional **blanco + azul índigo + morado muted** (jul 2026).
 
 | Token | Hex | Uso |
 |-------|-----|-----|
-| `background` | `#F1F5F9` | Fondo general |
-| `card` | `#FFFFFF` | Tarjetas, tablas, paneles Plotly |
-| `text` | `#0F172A` | Texto principal y ejes |
-| `text_muted` | `#334155` | Captions, labels secundarios |
-| `primary` | `#1D4ED8` | Barras, líneas A, headers de tabla |
-| `primary_soft` | `#DBEAFE` | Filas alternas en tablas |
-| `secondary` | `#0369A1` | Líneas B, segunda serie |
-| `danger` | `#B91C1C` | Alertas, mínima varianza en gráficos |
-| `neutral` | `#64748B` | Marcadores neutros |
-| `on_primary` | `#FFFFFF` | Texto sobre fondo azul oscuro |
+| `background` | `#F7F6F4` | Fondo washi / off-white |
+| `card` | `#FFFFFF` | Superficies |
+| `text` | `#1A2744` | Índigo navy (texto) |
+| `text_muted` | `#5A6F8C` | Azul acero |
+| `primary` | `#2C3E6B` | Azul índigo (acciones, headers) |
+| `primary_soft` | `#E4E8F0` | Soft fill / filas |
+| `secondary` | `#6B5B7A` | Morado muted (acentos) |
+| `secondary_soft` | `#EDE8F0` | Hover / soft purple |
+| `danger` | `#8B4A4A` | Alerta contenida |
+| `hairline` | `#D4D2CE` | Bordes finos (ma) |
 
-**Heatmaps:**
+- Tipografía: **Shippori Mincho** (títulos) + **Zen Kaku Gothic New** (cuerpo).
+- Marca: `assets/pga_logo.png` · tagline **design by PGA**.
+- Bordes 1px, radios 2px, sin sombras ni neón.
 
-- **Correlación:** escala rojo → blanco → verde (`HEATMAP_CORR` en `config.py`).
-- **Covarianza:** escala azul (`HEATMAP_COV`).
+### 5.14 UI — indicadores legibles
 
-**Implementación:**
-
-- `config.py` — `COLORS`, `CHART_COLORWAY`, `HEATMAP_CORR`, `HEATMAP_COV`
-- `.streamlit/config.toml` — tema base Streamlit
-- `modules/helpers.py` — `apply_theme()` inyecta CSS en todas las páginas
-- `modules/charts.py` — `_style_figure()` aplica paleta a todos los gráficos Plotly
-- `modules/helpers.py` — `theme_styler()` estiliza tablas (header azul, texto oscuro)
-
-Todas las páginas llaman `apply_theme()` justo después de `st.set_page_config()`.
-
-### 5.11 UI — indicadores legibles para el usuario (jul 2026)
-
-Regla: **cada número visible debe indicar qué representa** (etiqueta, caption o tooltip).
-
-Implementado en `modules/helpers.py`:
-
-| Función / constante | Rol |
-|---------------------|-----|
-| `INDICATOR_HELP` | Glosario de tooltips (Rf, riesgo σ, retorno, Sharpe, Beta, etc.) |
-| `show_metric()` | `st.metric` con `help=` y etiquetas claras |
-| `format_labeled()` | Valor + etiqueta corta (ej. `13.33% · retorno`) |
-| `theme_styler()` | Tablas con headers y contraste coherentes |
-
-**Cambio importante en Optimización:** riesgo y retorno van en **métricas separadas** (antes el retorno aparecía como `delta` de Streamlit y parecía un “aumento” del riesgo).
-
-**Dashboard:** expander **“¿Qué significa cada indicador?”** con el glosario completo.
-
-Captions bajo tablas, matrices y gráficos explican ejes y unidades.
+`show_metric`, `INDICATOR_HELP`, captions en todas las páginas nuevas (Riesgo, BL, grupos).
 
 ---
 
@@ -245,41 +210,38 @@ Captions bajo tablas, matrices y gráficos explican ejes y unidades.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
-| 0 | Scaffold: `app`, `config`, `requirements`, `helpers`, pages stub | Hecha |
-| 1 | `data.py` — precios + fundamentales | Hecha |
-| 2 | `metrics.py` — métricas (luego ajustada a fórmulas log / VaR paramétrico) | Hecha |
-| 3 | `portfolio.py` + inicio `optimization.py` — 3 portafolios + indicadores | Hecha |
-| 4 | Frontera eficiente + CAL + charts | Hecha |
-| 5 | `charts.py` completo + `export.py` Excel/CSV | Hecha |
-| 6 | UI Streamlit conectada (`state.py` + pages) | Hecha |
-| Extra | Solo mensual/anual; matrices visibles; `reload.py`; compat caché | Hecha |
-| 7a | Paleta azul unificada (UI + tablas + gráficos + heatmaps) | Hecha |
-| 7b | Indicadores legibles (`show_metric`, glosario, captions) | Hecha |
-| 7c | `.gitignore`, README, repo GitHub público | Hecha |
+| 0–6 | Scaffold → datos → métricas → portafolios → frontera/CAL → charts/export → UI | Hecha |
+| 7a–7c | Paleta azul, indicadores legibles, GitHub | Hecha |
+| **A** | VaR histórico + CVaR por activo y por portafolio | **Hecha** |
+| **B** | Monte Carlo + 3 escenarios (página Riesgo) | **Hecha** |
+| **C** | TradingView por activo seleccionado | **Hecha** |
+| **D** | Black-Litterman (views + comparación Markowitz) | **Hecha** |
+| **E** | Grupos multi-ticker / multi-benchmark + clasificación + validador Yahoo | **Hecha** |
 
-**Pendiente sugerido (Fase 7 restante / v1.1):**
+**Pendiente sugerido (v1.1+):**
 
-- Polish adicional de errores y docs.
-- Selector de tipo de Rf + descarga automática.
-- ROIC.
-- Monte Carlo, Fama-French, backtesting (post-MVP).
+- Subir commits A–E a GitHub (cuando el usuario lo pida).
+- Selector de tipo de Rf automático; ROIC.
+- Fama-French, backtesting.
 - PDF / PowerPoint en export.
+- Más de 3 grupos; vista comparar grupos lado a lado.
 
 ---
 
 ## 7. Cómo ejecutar
 
-### En VS Code (recomendado)
+### En VS Code / Cursor (recomendado)
 
-1. **File → Open Folder** → carpeta del proyecto.
-2. **Terminal → New Terminal** (`Ctrl+Ñ`).
+1. **File → Open Folder** → carpeta del proyecto.  
+2. **Terminal → New Terminal**.  
 3. Activar entorno:
 
 ```powershell
+cd "C:\Users\pgare\OneDrive\Desktop\DESARROLLO PYTHON\AYUDANTE FINANCIERO"
 .\.venv\Scripts\Activate.ps1
 ```
 
-4. Primera vez (o máquina nueva):
+4. Si faltan dependencias (p. ej. tras añadir `financedatabase`):
 
 ```powershell
 pip install -r requirements.txt
@@ -291,7 +253,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-6. Abrir: `http://localhost:8501`
+6. Abrir en el navegador: **http://localhost:8501**
 
 Para detener: **Ctrl+C** en la terminal.
 
@@ -308,17 +270,11 @@ cd "C:\Users\pgare\OneDrive\Desktop\DESARROLLO PYTHON\AYUDANTE FINANCIERO"
 .\.venv\Scripts\python.exe reload.py
 ```
 
-Hace:
-
-1. Intenta cerrar Streamlit anterior.
-2. Borra `__pycache__` / `.pyc`.
-3. Arranca `streamlit run app.py`.
-
-Si `reload.py` se traba: **Ctrl+C** y usar el arranque normal.
-
-**Nota tema:** cambios en `.streamlit/config.toml` requieren **reiniciar** Streamlit (no basta con Rerun).
+**Nota:** cambios en `.streamlit/config.toml` requieren **reiniciar** Streamlit.
 
 ### Instalación en otra máquina (desde GitHub)
+
+> El repo remoto puede estar **atrás** respecto a las fases A–E hasta que se haga push.
 
 ```powershell
 git clone https://github.com/P2PWD765/ayudante-financiero.git
@@ -329,86 +285,53 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-**No compartir** la carpeta `.venv` (cada quien la crea).
-
 ---
 
 ## 8. Problemas encontrados y soluciones
 
-### 8.1 Error `expected_returns_annual`
+(Resumen del MVP; sigue vigente.)
 
-- **Causa:** Streamlit tenía en memoria una versión vieja de `evaluate_portfolio`.
-- **Mitigación:**
-  - `evaluate_portfolio(..., **kwargs)` compatible.
-  - `build_standard_portfolios` pasa nombres compatibles (`expected_returns`, etc.).
-  - `state.py` hace `importlib.reload` de módulos de negocio al analizar.
-  - Script `reload.py` para reinicio limpio.
+- Caché de Streamlit / módulos viejos → `importlib.reload` en `state.py` + `reload.py`.
+- Matrices poco visibles → tablas + heatmaps.
+- Diferencias vs Excel por precios ajustados / fin de mes.
+- Tema CSS: reiniciar Streamlit tras cambiar `config.toml`.
+- `delta` de `st.metric` confundía retorno → métricas separadas.
+- `gh`/`git` fuera del PATH en algunas terminales Windows.
 
-### 8.2 Matrices covarianza / correlación “no cargaban”
+**Nuevo (A–E):**
 
-- Estaban calculadas pero poco visibles.
-- Se añadieron tablas + heatmaps en **Portafolio** y **Dashboard**.
-- Covarianza mostrada en frecuencia **mensual** (como Excel del usuario).
-
-### 8.3 Rendimientos vs Excel (ambos con LN)
-
-Aunque ambos usen \(\ln(P_t/P_{t-1})\), \(\mu\) puede diferir por:
-
-- Precios **ajustados** Yahoo vs Close sin ajustar en Excel.
-- Periodo / cantidad de meses distinta.
-- Criterio de “fin de mes” distinto.
-
-Beta/corr suelen acercarse más; el rendimiento medio es más sensible a la serie exacta de precios.
-
-### 8.4 Beta Yahoo vs calculado
-
-- Yahoo publica beta ~5y mensual (aprox.).
-- Programa: beta mensual log + SUMAPRODUCTO para portafolio.
-- Diferencias pequeñas (~0.85 vs ~0.86) son normales.
-
-### 8.5 Paleta / tema no se veía actualizado
-
-- **Causa:** fondo nuevo muy similar al anterior; Streamlit cachea tema hasta reiniciar.
-- **Mitigación:** `apply_theme()` con CSS en todas las páginas; reiniciar Streamlit tras cambios en `.streamlit/config.toml`.
-
-### 8.6 `delta` de `st.metric` confundía al usuario
-
-- En Optimización, el retorno esperado (ej. 13.33%) aparecía como flecha verde bajo el riesgo.
-- **Solución:** métricas separadas — “Riesgo anual (σ)” y “Retorno esperado” con `show_metric()` y tooltips.
-
-### 8.7 GitHub CLI (`gh`) no reconocido en PowerShell
-
-- **Causa:** `gh` y `git` instalados pero fuera del `PATH` de la terminal.
-- **Solución:** usar ruta completa o añadir al PATH de la sesión:
-
-```powershell
-$env:Path += ";C:\Program Files\Git\bin;C:\Program Files\GitHub CLI"
-```
-
-- Repo publicado: https://github.com/P2PWD765/ayudante-financiero (rama `main`).
+- FinanceDatabase carga catálogo la primera vez (puede tardar unos segundos).
+- TradingView necesita red en el navegador.
+- Si un grupo tiene ticker inválido, ese grupo falla; los demás pueden completarse (aviso en `last_error`).
 
 ---
 
 ## 9. Configuración relevante (`config.py`)
 
-### Datos y optimización
+### Datos / optimización
 
-- `DEFAULT_PERIOD = "5y"`
-- `DEFAULT_BENCHMARK = "^GSPC"`
-- `RISK_FREE_RATE = 0.04`
-- `MONTHS_PER_YEAR = 12`
-- `LONG_ONLY = True`
-- `EFFICIENT_FRONTIER_POINTS`, `CAL_POINTS`, `CAL_MAX_RISKY_WEIGHT`
-- `FUNDAMENTAL_FIELDS` (claves exactas Yahoo)
-- `SHOW_YAHOO_COMPARISON = True`
+- `DEFAULT_PERIOD`, `DEFAULT_BENCHMARK`, `RISK_FREE_RATE`, `LONG_ONLY`, frontera/CAL.
 
-### UI / tema
+### Monte Carlo
 
-- `COLORS` — paleta Azul Dashboard (ver §5.10)
-- `CHART_COLORWAY` — series múltiples en gráficos de líneas
-- `HEATMAP_CORR` — correlación: rojo ↔ verde
-- `HEATMAP_COV` — covarianza: escala azul
-- `APP_TITLE`, `APP_ICON`, `PAGE_LAYOUT`
+- `MONTE_CARLO_SIMULATIONS`, `MONTE_CARLO_HORIZON_MONTHS`, `MONTE_CARLO_SEED`, `MONTE_CARLO_SCENARIOS`.
+
+### Black-Litterman
+
+- `BL_TAU`, `BL_DELTA`, `BL_DEFAULT_CONFIDENCE`.
+
+### Grupos / clasificación
+
+- `MAX_ANALYSIS_GROUPS = 3`
+- `BENCHMARK_MARKET_MAP` (benchmark → mercado/país)
+
+### TradingView
+
+- `TRADINGVIEW_HEIGHT`, `TRADINGVIEW_INTERVAL`, `TRADINGVIEW_THEME`, `TRADINGVIEW_SYMBOL_MAP`
+
+### UI
+
+- `COLORS`, `CHART_COLORWAY`, heatmaps, `APP_TITLE`
 
 ---
 
@@ -416,46 +339,31 @@ $env:Path += ";C:\Program Files\Git\bin;C:\Program Files\GitHub CLI"
 
 | Módulo | Responsabilidad |
 |--------|-----------------|
-| `data.py` | Descargar/limpiar precios; fundamentales; benchmark |
-| `metrics.py` | Retornos log, riesgo, Beta, Sharpe, VaR, Treynor, Jensen, resumen |
-| `portfolio.py` | 3 portafolios, pesos, evaluación mensual/anual, matrices |
+| `data.py` | Precios, fundamentales, benchmark |
+| `metrics.py` | Retornos, Beta, Sharpe, VaR paramétrico/histórico, CVaR |
+| `portfolio.py` | 3 portafolios + evaluación + VaR/CVaR de portafolio |
 | `optimization.py` | Min var, max Sharpe, frontera, CAL |
-| `charts.py` | Plotly con `_style_figure()`; heatmaps, frontera, CAL, precios |
-| `export.py` | Excel multi-hoja y CSV |
-| `state.py` | `session_state` + `run_full_analysis` |
-| `helpers.py` | Tickers, formatos, `apply_theme`, `theme_styler`, `show_metric`, `INDICATOR_HELP` |
+| `black_litterman.py` | Prior π, views, μ_BL, pesos BL |
+| `montecarlo.py` | Simulación + 3 escenarios |
+| `classification.py` | Mercado vía benchmark; sector/industria (FinanceDatabase) |
+| `tradingview.py` | Mapeo Yahoo→TV + embed |
+| `charts.py` | Plotly (incl. fan MC, escenarios) |
+| `export.py` | Excel/CSV |
+| `state.py` | Grupos, `run_groups_analysis`, grupo activo |
+| `helpers.py` | Tema, formatos, glosario |
 
 ---
 
 ## 11. Exportación
 
-Hojas típicas Excel:
-
-- Precios, Fundamentales, Métricas activos  
-- Portafolios, Pesos  
-- Covarianzas, Correlaciones  
-- Frontera eficiente, CAL  
-
-Ruta habitual: carpeta `exports/` (ignorada por git en `.gitignore`).
+Hojas típicas: Precios, Fundamentales, Métricas, Portafolios, Pesos, Covarianzas, Correlaciones, Frontera, CAL.  
+Carpeta `exports/` (en `.gitignore`).
 
 ---
 
 ## 12. Compartir con un compañero
 
-**Opción recomendada — GitHub:**
-
-```powershell
-git clone https://github.com/P2PWD765/ayudante-financiero.git
-cd ayudante-financiero
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-**Alternativa:** ZIP del proyecto **sin** `.venv` ni `exports/`.
-
-### Actualizar el repo tras cambios locales
+GitHub (cuando A–E estén pusheados) o ZIP **sin** `.venv` ni `exports/`.
 
 ```powershell
 git add .
@@ -463,25 +371,25 @@ git commit -m "Describe el cambio"
 git push
 ```
 
+(Solo cuando el usuario lo pida explícitamente.)
+
 ---
 
-## 13. Contexto de validación manual (usuario)
+## 13. Contexto de validación manual
 
-El usuario validó contra Excel con acciones US, pesos iguales, S&P 500, retornos mensuales log, Beta con `PENDIENTE` y portafolio con `SUMAPRODUCTO`. Rf de referencia en su hoja: TBond 10Y ~4.55% (el default del programa es 4%, editable en Configuración).
-
-Tickers de prueba frecuentes:
-
-`MSFT, GOOGL, AMZN, COST, CVX, LMT, V`
+Validación histórica vs Excel: acciones US, S&P 500, retornos mensuales log, Beta SUMAPRODUCTO.  
+Tickers de prueba: `MSFT, GOOGL, AMZN, COST, CVX, LMT, V`  
+Grupo Japón de prueba: `7203.T, 6758.T` con benchmark `^N225`.
 
 ---
 
 ## 14. Próximos pasos sugeridos
 
-1. Fase 7 restante: mensajes de error más claros, prueba end-to-end documentada.  
-2. Exportar serie de retornos mensuales para cruce 1:1 con Excel.  
-3. v1.1: tipo de Rf automático; ROIC; más fuentes de datos.  
-4. ~~Subir a GitHub para colaboración~~ → **Hecho:** https://github.com/P2PWD765/ayudante-financiero
+1. Push a GitHub de fases A–E (cuando se autorice).  
+2. Exportar retornos mensuales 1:1 vs Excel.  
+3. Rf automático / ROIC / backtesting.  
+4. Comparar grupos lado a lado en una sola vista.
 
 ---
 
-*Este documento resume el acuerdo de diseño y el estado del código al 28 jul 2026 (MVP + UI azul + indicadores + GitHub).*
+*Documento actualizado al 28 jul 2026: MVP + fases A–E (VaR/CVaR, Monte Carlo, TradingView, Black-Litterman, grupos multi-benchmark).*

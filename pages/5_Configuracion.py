@@ -31,9 +31,13 @@ with col1:
         help="Ventana de precios a descargar de Yahoo Finance.",
     )
     benchmark = st.text_input(
-        "Benchmark / mercado de referencia (Yahoo)",
+        "Benchmark por defecto (nuevos grupos)",
         value=st.session_state.benchmark,
-        help="Ejemplo: ^GSPC = S&P 500. Se usa para Beta y Alpha.",
+        help=(
+            "Se usa al crear una nueva fila en Portafolio. "
+            "Cada grupo puede tener su propio benchmark. "
+            "Ejemplo: ^GSPC = S&P 500."
+        ),
     )
     risk_free_rate = st.number_input(
         "Tasa libre de riesgo anual — Rf (decimal)",

@@ -47,48 +47,113 @@ CAL_POINTS = 25
 # Extiende la CAL más allá del tangency (1.0 = hasta el max Sharpe).
 CAL_MAX_RISKY_WEIGHT = 1.5
 
-# --- UI / tema ---
-# Paleta "Azul Dashboard" — claro, legible, azul como color principal.
-# Sin morados ni tonos neón: contraste alto texto/fondo.
-APP_TITLE = "Dashboard Financiero"
-APP_ICON = "📈"
+# --- Monte Carlo ---
+MONTE_CARLO_SIMULATIONS = 5_000
+MONTE_CARLO_HORIZON_MONTHS = 12
+MONTE_CARLO_SEED = 42
+MONTE_CARLO_SAMPLE_PATHS = 40  # trayectorias individuales a dibujar
+# Escenarios: μ' = μ + k·σ_i ; Σ' = Σ · vol_scale²
+MONTE_CARLO_SCENARIOS = {
+    "Pesimista": {"mu_shift_sigma": -1.0, "vol_scale": 1.25},
+    "Normal": {"mu_shift_sigma": 0.0, "vol_scale": 1.0},
+    "Optimista": {"mu_shift_sigma": 1.0, "vol_scale": 0.85},
+}
+
+# --- Black-Litterman ---
+BL_TAU = 0.05  # incertidumbre del prior (τ)
+BL_DELTA = 2.5  # aversión al riesgo para π = δ Σ w
+BL_DEFAULT_CONFIDENCE = 0.50  # 0–1; más alto = la view pesa más
+
+# --- Grupos de análisis (Fase E) ---
+MAX_ANALYSIS_GROUPS = 3
+# El benchmark del grupo identifica el mercado/país (regla de producto).
+BENCHMARK_MARKET_MAP = {
+    "^GSPC": "Estados Unidos",
+    "^DJI": "Estados Unidos",
+    "^IXIC": "Estados Unidos",
+    "^RUT": "Estados Unidos",
+    "^N225": "Japón",
+    "^FTSE": "Reino Unido",
+    "^GDAXI": "Alemania",
+    "^IBEX": "España",
+    "^FCHI": "Francia",
+    "^MXX": "México",
+    "^BVSP": "Brasil",
+    "^HSI": "Hong Kong",
+    "000001.SS": "China",
+}
+
+# --- TradingView ---
+TRADINGVIEW_HEIGHT = 780
+TRADINGVIEW_INTERVAL = "D"
+TRADINGVIEW_THEME = "light"
+# Mapa Yahoo Finance → símbolo TradingView (índices y casos especiales).
+TRADINGVIEW_SYMBOL_MAP = {
+    "^GSPC": "SP:SPX",
+    "^DJI": "DJ:DJI",
+    "^IXIC": "NASDAQ:IXIC",
+    "^RUT": "TVC:RUT",
+    "^VIX": "CBOE:VIX",
+    "^N225": "TSE:NI225",
+    "^FTSE": "TVC:UKX",
+    "^GDAXI": "XETR:DAX",
+    "^IBEX": "BME:IBC",
+    "^FCHI": "EURONEXT:CAC40",
+    "^MXX": "BMV:ME",
+    "BRK-B": "NYSE:BRK.B",
+    "BRK-A": "NYSE:BRK.A",
+}
+
+# --- UI / tema — Japanese Minimalism (PGA) ---
+# Paleta profesional: blanco + azul índigo + morado muted.
+# Espacio negativo (ma), tipografía sobria, sin neón ni kawaii.
+APP_TITLE = "PGA · Dashboard Financiero"
+APP_BRAND = "PGA"
+APP_TAGLINE = "PGA SOFTWARE"
+APP_ICON = "assets/pga_logo.png"
 PAGE_LAYOUT = "wide"
 
 COLORS = {
-    "background": "#F1F5F9",   # Gris azulado suave (fondo)
-    "card": "#FFFFFF",         # Blanco (tarjetas / tablas)
-    "text": "#0F172A",         # Slate casi negro (texto principal)
-    "text_muted": "#334155",   # Slate medio (captions / ejes secundarios)
-    "primary": "#1D4ED8",      # Azul principal (barras, líneas A, headers)
-    "primary_soft": "#DBEAFE", # Azul muy suave (filas alternas / highlights)
-    "secondary": "#0369A1",    # Azul cielo oscuro (líneas B / series 2)
-    "danger": "#B91C1C",       # Rojo mate (alertas / mínima varianza)
-    "neutral": "#64748B",      # Gris slate (marcadores neutros)
-    "on_primary": "#FFFFFF",   # Texto sobre fondos azul oscuro
+    # Blancos
+    "background": "#F7F6F4",   # washi / off-white cálido-neutro
+    "card": "#FFFFFF",         # blanco puro (superficies)
+    "surface": "#EEEEEC",      # shade blanco (separadores suaves)
+    # Azules
+    "text": "#1A2744",         # índigo casi navy (texto)
+    "text_muted": "#5A6F8C",   # azul acero muted
+    "primary": "#2C3E6B",      # azul índigo principal
+    "primary_soft": "#E4E8F0", # azul muy suave (filas / soft fill)
+    # Morados
+    "secondary": "#6B5B7A",    # morado muted profesional
+    "secondary_soft": "#EDE8F0",  # lilac-gris muy suave
+    # Utilidad
+    "danger": "#8B4A4A",       # rojo terroso contenido (alertas)
+    "neutral": "#7A7A78",      # gris piedra
+    "on_primary": "#FFFFFF",   # texto sobre azul/morado oscuro
+    "hairline": "#D4D2CE",     # líneas finas (ma / bordes)
 }
 
-# Series múltiples: azules / slate / teal (sin púrpuras ni neón).
+# Series de gráficos: azul → morado → shades (sin neón).
 CHART_COLORWAY = [
-    COLORS["primary"],   # #1D4ED8
-    COLORS["secondary"], # #0369A1
-    "#0F766E",           # teal oscuro
-    "#1E3A8A",           # navy
-    "#475569",           # slate
-    "#0284C7",           # sky
-    COLORS["danger"],    # alerta
+    COLORS["primary"],      # #2C3E6B
+    COLORS["secondary"],    # #6B5B7A
+    "#5A6F8C",              # acero
+    "#4A3F5C",              # morado profundo
+    "#1A2744",              # navy
+    "#8A7A94",              # morado claro
+    COLORS["danger"],       # alerta
 ]
 
-# Escalas de heatmaps (legibles con texto oscuro).
-# Correlación: rojo (negativa) ↔ verde (positiva).
+# Heatmaps sobrios (sin saturación alta).
 HEATMAP_CORR = [
-    [0.0, "#DC2626"],  # correlación negativa
-    [0.25, "#FECACA"],
-    [0.5, "#FFFFFF"],  # cero / neutro
-    [0.75, "#BBF7D0"],
-    [1.0, "#16A34A"],  # correlación positiva
+    [0.0, "#8B4A4A"],
+    [0.25, "#E8D5D5"],
+    [0.5, "#FFFFFF"],
+    [0.75, "#D5DCE8"],
+    [1.0, "#2C3E6B"],
 ]
 HEATMAP_COV = [
-    [0.0, "#EFF6FF"],
-    [0.5, "#93C5FD"],
-    [1.0, "#2563EB"],
+    [0.0, "#F7F6F4"],
+    [0.5, "#C8D0DE"],
+    [1.0, "#2C3E6B"],
 ]

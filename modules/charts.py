@@ -537,3 +537,196 @@ def comparison_metrics_chart(
         margin=dict(l=40, r=40, t=60, b=40),
     )
     return _style_figure(fig)
+
+
+def montecarlo_fan_chart(
+    percentiles: pd.DataFrame,
+    paths=None,
+    *,
+    sample_paths: int | None = None,
+    title: str = "Monte Carlo — bandas de percentiles",
+) -> go.Figure:
+    """Fan chart de simulación Monte Carlo (percentiles + muestra de paths).
+
+    Args:
+        percentiles: DataFrame indexado por mes con columnas P5, P25, P50, P75, P95.
+        paths: Array (n_sim, horizon+1) opcional para dibujar trayectorias sueltas.
+        sample_paths: Cuántas trayectorias individuales mostrar.
+        title: Título del gráfico.
+
+    Returns:
+        Figura Plotly.
+    """
+    import numpy as np
+
+    fig = go.Figure()
+    months = percentiles.index.astype(int)
+    c = config.COLORS
+
+    # Banda P5–P95
+    fig.add_trace(
+        go.Scatter(
+            x=list(months) + list(months[::-1]),
+            y=list(percentiles["P95"]) + list(percentiles["P5"][::-1]),
+            fill="toself",
+            fillcolor="rgba(29, 78, 216, 0.12)",
+            line=dict(color="rgba(0,0,0,0)"),
+            name="P5–P95",
+            hoverinfo="skip",
+        )
+    )
+    # Banda P25–P75
+    fig.add_trace(
+        go.Scatter(
+            x=list(months) + list(months[::-1]),
+            y=list(percentiles["P75"]) + list(percentiles["P25"][::-1]),
+            fill="toself",
+            fillcolor="rgba(3, 105, 161, 0.18)",
+            line=dict(color="rgba(0,0,0,0)"),
+            name="P25–P75",
+            hoverinfo="skip",
+        )
+    )
+
+    if paths is not None:
+        n_show = int(sample_paths or config.MONTE_CARLO_SAMPLE_PATHS)
+        n_show = min(n_show, paths.shape[0])
+        if n_show > 0:
+            idx = np.linspace(0, paths.shape[0] - 1, n_show, dtype=int)
+            for i, row_i in enumerate(idx):
+                fig.add_trace(
+                    go.Scatter(
+                        x=months,
+                        y=paths[row_i],
+                        mode="lines",
+                        line=dict(color="rgba(100, 116, 139, 0.25)", width=1),
+                        name="Trayectorias" if i == 0 else None,
+                        showlegend=(i == 0),
+                        hoverinfo="skip",
+                    )
+                )
+
+    fig.add_trace(
+        go.Scatter(
+            x=months,
+            y=percentiles["P50"],
+            mode="lines",
+            name="Mediana (P50)",
+            line=dict(color=c["primary"], width=2.5),
+        )
+    )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Mes",
+        yaxis_title="Valor del portafolio",
+        yaxis_tickformat=",.0f",
+        margin=dict(l=40, r=40, t=60, b=40),
+        hovermode="x unified",
+    )
+    return _style_figure(fig)
+
+
+def montecarlo_final_histogram(
+    final_values: pd.Series,
+    *,
+    initial_value: float | None = None,
+    title: str = "Distribución del valor final",
+) -> go.Figure:
+    """Histograma del valor final de las simulaciones Monte Carlo.
+
+    Args:
+        final_values: Serie de valores al horizonte.
+        initial_value: Capital inicial (línea vertical de referencia).
+        title: Título.
+
+    Returns:
+        Figura Plotly.
+    """
+    fig = go.Figure()
+    fig.add_trace(
+        go.Histogram(
+            x=final_values,
+            nbinsx=40,
+            name="Simulaciones",
+            marker_color=config.COLORS["primary"],
+            opacity=0.85,
+        )
+    )
+    if initial_value is not None:
+        fig.add_vline(
+            x=initial_value,
+            line_dash="dash",
+            line_color=config.COLORS["danger"],
+            annotation_text="Capital inicial",
+            annotation_position="top",
+        )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Valor final",
+        yaxis_title="Frecuencia",
+        xaxis_tickformat=",.0f",
+        bargap=0.05,
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return _style_figure(fig)
+
+
+def montecarlo_scenarios_chart(
+    scenario_results: dict,
+    *,
+    title: str = "Escenarios Monte Carlo — mediana (P50)",
+) -> go.Figure:
+    """Compara la mediana de valor en el tiempo para Pesimista / Normal / Optimista.
+
+    Args:
+        scenario_results: Dict nombre -> resultado con 'percentiles'.
+        title: Título del gráfico.
+
+    Returns:
+        Figura Plotly.
+    """
+    color_map = {
+        "Pesimista": config.COLORS["danger"],
+        "Normal": config.COLORS["primary"],
+        "Optimista": config.COLORS["secondary"],
+    }
+    fig = go.Figure()
+    for name in ("Pesimista", "Normal", "Optimista"):
+        if name not in scenario_results:
+            continue
+        pct = scenario_results[name]["percentiles"]
+        months = pct.index.astype(int)
+        fig.add_trace(
+            go.Scatter(
+                x=months,
+                y=pct["P50"],
+                mode="lines",
+                name=f"{name} (P50)",
+                line=dict(color=color_map.get(name, config.COLORS["neutral"]), width=2.5),
+            )
+        )
+        # Banda P5–P95 solo para Normal (referencia de dispersión).
+        if name == "Normal":
+            fig.add_trace(
+                go.Scatter(
+                    x=list(months) + list(months[::-1]),
+                    y=list(pct["P95"]) + list(pct["P5"][::-1]),
+                    fill="toself",
+                    fillcolor="rgba(29, 78, 216, 0.10)",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    name="Normal P5–P95",
+                    hoverinfo="skip",
+                )
+            )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Mes",
+        yaxis_title="Valor del portafolio",
+        yaxis_tickformat=",.0f",
+        margin=dict(l=40, r=40, t=60, b=40),
+        hovermode="x unified",
+    )
+    return _style_figure(fig)

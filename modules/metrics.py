@@ -358,7 +358,7 @@ def treynor_ratio(
 
 
 # ---------------------------------------------------------------------------
-# VaR paramétrico y matrices
+# VaR / CVaR y matrices
 # ---------------------------------------------------------------------------
 
 def _z_score(confidence: float) -> float:
@@ -381,6 +381,7 @@ def value_at_risk(
     """VaR paramétrico: Capital * (Z * sigma - mu).
 
     Asume distribución normal de los rendimientos.
+    Convención: valor positivo = pérdida estimada.
 
     Args:
         returns: Rendimientos logarítmicos del periodo.
@@ -388,7 +389,7 @@ def value_at_risk(
         capital: Capital expuesto (1.0 = VaR en unidades de retorno).
 
     Returns:
-        VaR paramétrico (pérdida esperada máxima bajo el modelo).
+        VaR paramétrico (pérdida estimada bajo el modelo normal).
     """
     clean = returns.dropna()
     if clean.empty:
@@ -401,6 +402,114 @@ def value_at_risk(
 
     z = _z_score(confidence)
     return float(capital * (z * sigma - mu))
+
+
+def value_at_risk_from_moments(
+    mu: float,
+    sigma: float,
+    confidence: float = 0.95,
+    capital: float = 1.0,
+) -> float:
+    """VaR paramétrico a partir de media y volatilidad conocidas.
+
+    Args:
+        mu: Retorno medio del periodo.
+        sigma: Desviación estándar del periodo.
+        confidence: Nivel de confianza.
+        capital: Capital expuesto.
+
+    Returns:
+        VaR paramétrico (pérdida positiva).
+    """
+    if pd.isna(sigma) or sigma < 0:
+        return float("nan")
+    z = _z_score(confidence)
+    return float(capital * (z * float(sigma) - float(mu)))
+
+
+def historical_value_at_risk(
+    returns: pd.Series,
+    confidence: float = 0.95,
+    capital: float = 1.0,
+) -> float:
+    """VaR histórico: percentil empírico de la cola izquierda.
+
+    Convención: valor positivo = pérdida.
+    VaR = -cuantil_(1-α)(retornos) × capital.
+
+    Args:
+        returns: Rendimientos logarítmicos del periodo.
+        confidence: Nivel de confianza (0.95 o 0.99).
+        capital: Capital expuesto.
+
+    Returns:
+        VaR histórico (pérdida en el peor (1-α) de los meses observados).
+    """
+    clean = returns.dropna()
+    if clean.empty:
+        return float("nan")
+
+    alpha = 1.0 - confidence
+    quantile = float(clean.quantile(alpha))
+    return float(capital * (-quantile))
+
+
+def conditional_value_at_risk(
+    returns: pd.Series,
+    confidence: float = 0.95,
+    capital: float = 1.0,
+) -> float:
+    """CVaR / Expected Shortfall histórico.
+
+    Media de las pérdidas en los escenarios peores o iguales al VaR histórico.
+    Convención: valor positivo = pérdida esperada en la cola.
+
+    Args:
+        returns: Rendimientos logarítmicos del periodo.
+        confidence: Nivel de confianza (0.95 o 0.99).
+        capital: Capital expuesto.
+
+    Returns:
+        CVaR histórico.
+    """
+    clean = returns.dropna()
+    if clean.empty:
+        return float("nan")
+
+    alpha = 1.0 - confidence
+    threshold = float(clean.quantile(alpha))
+    tail = clean[clean <= threshold]
+    if tail.empty:
+        return historical_value_at_risk(clean, confidence=confidence, capital=capital)
+    return float(capital * (-float(tail.mean())))
+
+
+def risk_metrics_bundle(
+    returns: pd.Series,
+    confidence: float = 0.95,
+    capital: float = 1.0,
+) -> dict[str, float]:
+    """Calcula VaR paramétrico, VaR histórico y CVaR en un solo paso.
+
+    Args:
+        returns: Serie de rendimientos.
+        confidence: Nivel de confianza.
+        capital: Capital expuesto.
+
+    Returns:
+        Dict con claves var_parametric, var_historical, cvar.
+    """
+    return {
+        "var_parametric": value_at_risk(
+            returns, confidence=confidence, capital=capital
+        ),
+        "var_historical": historical_value_at_risk(
+            returns, confidence=confidence, capital=capital
+        ),
+        "cvar": conditional_value_at_risk(
+            returns, confidence=confidence, capital=capital
+        ),
+    }
 
 
 def correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
@@ -488,6 +597,22 @@ def summary_metrics(
                 risk_free_rate=risk_free_rate,
                 periods_per_year=config.MONTHS_PER_YEAR,
             ),
+            "VaR 95% paramétrico (mensual)": value_at_risk(
+                asset_monthly,
+                confidence=0.95,
+                capital=1.0,
+            ),
+            "VaR 95% histórico (mensual)": historical_value_at_risk(
+                asset_monthly,
+                confidence=0.95,
+                capital=1.0,
+            ),
+            "CVaR 95% (mensual)": conditional_value_at_risk(
+                asset_monthly,
+                confidence=0.95,
+                capital=1.0,
+            ),
+            # Alias legado para tablas/export que aún usen el nombre corto.
             "VaR 95% (mensual)": value_at_risk(
                 asset_monthly,
                 confidence=0.95,

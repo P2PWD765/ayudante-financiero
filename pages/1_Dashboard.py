@@ -22,7 +22,8 @@ from modules.helpers import (
 )
 from modules import metrics
 from modules.portfolio import portfolios_summary_table
-from modules.state import init_session_state, require_analysis
+from modules.state import init_session_state, render_active_group_selector, require_analysis
+from modules.tradingview import render_tradingview_chart, yahoo_to_tradingview
 
 st.set_page_config(page_title="Dashboard", layout="wide")
 apply_theme()
@@ -36,6 +37,8 @@ st.caption(
 
 if not require_analysis():
     st.stop()
+
+render_active_group_selector(key="dashboard_active_group")
 
 prices = st.session_state.prices
 portfolios = st.session_state.portfolios
@@ -71,6 +74,8 @@ with st.expander("¿Qué significa cada indicador?"):
             ("Treynor", INDICATOR_HELP["treynor"]),
             ("Jensen (Alpha)", INDICATOR_HELP["jensen"]),
             ("VaR 95%", INDICATOR_HELP["var"]),
+            ("VaR histórico", INDICATOR_HELP["var_historico"]),
+            ("CVaR 95%", INDICATOR_HELP["cvar"]),
             ("Peso", INDICATOR_HELP["peso"]),
             ("Correlación", INDICATOR_HELP["correlacion"]),
             ("Covarianza", INDICATOR_HELP["covarianza"]),
@@ -93,6 +98,9 @@ port_cols = [
     "Sharpe (anual)",
     "Treynor",
     "Jensen",
+    "VaR 95% paramétrico (mensual)",
+    "VaR 95% histórico (mensual)",
+    "CVaR 95% (mensual)",
 ]
 port_table = portfolios_summary_table(portfolios)
 port_table = port_table[[c for c in port_cols if c in port_table.columns]]
@@ -110,10 +118,64 @@ st.dataframe(
             "Sharpe (anual)": "{:.4f}",
             "Treynor": "{:.4f}",
             "Jensen": "{:.4f}",
+            "VaR 95% paramétrico (mensual)": "{:.2%}",
+            "VaR 95% histórico (mensual)": "{:.2%}",
+            "CVaR 95% (mensual)": "{:.2%}",
         },
     ),
     use_container_width=True,
 )
+
+st.subheader("Riesgo — VaR y CVaR por portafolio")
+st.caption(
+    "Valores en % = pérdida estimada sobre el capital del portafolio en un mes. "
+    "Paramétrico asume normalidad; histórico usa la cola empírica; "
+    "CVaR = severidad media de esa cola. "
+    "Con capital configurado también se muestra la pérdida en dinero."
+)
+capital = float(st.session_state.get("capital") or 0.0)
+risk_tabs = st.tabs(list(portfolios.keys()))
+for tab, (name, portfolio) in zip(risk_tabs, portfolios.items()):
+    with tab:
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            show_metric(
+                "VaR 95% paramétrico",
+                format_percent(portfolio.get("var_parametric_95")),
+                help_key="var",
+            )
+        with m2:
+            show_metric(
+                "VaR 95% histórico",
+                format_percent(portfolio.get("var_historical_95")),
+                help_key="var_historico",
+            )
+        with m3:
+            show_metric(
+                "CVaR 95%",
+                format_percent(portfolio.get("cvar_95")),
+                help_key="cvar",
+            )
+        if capital > 0:
+            n1, n2, n3 = st.columns(3)
+            with n1:
+                show_metric(
+                    "VaR paramétrico ($)",
+                    format_compact(portfolio.get("var_parametric_95_money")),
+                    help_key="var",
+                )
+            with n2:
+                show_metric(
+                    "VaR histórico ($)",
+                    format_compact(portfolio.get("var_historical_95_money")),
+                    help_key="var_historico",
+                )
+            with n3:
+                show_metric(
+                    "CVaR ($)",
+                    format_compact(portfolio.get("cvar_95_money")),
+                    help_key="cvar",
+                )
 
 st.subheader("Métricas por activo (mensual y anual)")
 st.caption(
@@ -132,7 +194,9 @@ metric_cols = [
         "Desviacion E. (mensual)",
         "Desviacion E. (anual)",
         "Sharpe (anual)",
-        "VaR 95% (mensual)",
+        "VaR 95% paramétrico (mensual)",
+        "VaR 95% histórico (mensual)",
+        "CVaR 95% (mensual)",
         "Beta",
         "Beta (Yahoo)",
         "Alpha de Jensen",
@@ -151,7 +215,9 @@ st.dataframe(
             "Desviacion E. (mensual)": "{:.2%}",
             "Desviacion E. (anual)": "{:.2%}",
             "Sharpe (anual)": "{:.4f}",
-            "VaR 95% (mensual)": "{:.4f}",
+            "VaR 95% paramétrico (mensual)": "{:.2%}",
+            "VaR 95% histórico (mensual)": "{:.2%}",
+            "CVaR 95% (mensual)": "{:.2%}",
             "Beta": "{:.4f}",
             "Beta (Yahoo)": "{:.4f}",
             "Alpha de Jensen": "{:.4f}",
@@ -244,6 +310,38 @@ st.plotly_chart(
     ),
     use_container_width=True,
 )
+
+st.subheader("TradingView — activo seleccionado")
+st.caption(
+    "Gráfico interactivo en tiempo real (widget oficial TradingView). "
+    "Elige un ticker del análisis actual. Índices Yahoo (ej. ^GSPC) "
+    "se mapean automáticamente al símbolo TradingView equivalente."
+)
+ticker_options = list(prices.columns)
+default_idx = 0
+tv_col1, tv_col2 = st.columns([2, 1])
+with tv_col1:
+    selected_tv = st.selectbox(
+        "Activo",
+        ticker_options,
+        index=default_idx,
+        key="dashboard_tradingview_ticker",
+    )
+with tv_col2:
+    show_metric(
+        "Símbolo TradingView",
+        yahoo_to_tradingview(selected_tv),
+        help_text="Símbolo enviado al widget tras mapear desde Yahoo Finance.",
+    )
+
+try:
+    used_symbol = render_tradingview_chart(
+        selected_tv,
+        watchlist=ticker_options,
+    )
+    st.caption(f"Mostrando **{selected_tv}** → TradingView `{used_symbol}`.")
+except Exception as exc:  # noqa: BLE001
+    st.warning(f"No se pudo cargar TradingView para {selected_tv}: {exc}")
 
 st.subheader("Pesos — Máximo Sharpe")
 st.caption(INDICATOR_HELP["peso"])
